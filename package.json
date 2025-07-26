@@ -5,7 +5,24 @@
   "license": "MIT",
   "author": "",
   "type": "module",
-  "main": "test.mjs",
+  "main": "src/index.mjs",
+  "module": "src/index.mjs",
+  "unpkg": "dist/stealthim.js",
+  "browser": {
+    "https": false,
+    "http": false,
+    "fs": false,
+    "path": "path-browserify",
+    "crypto": "crypto-browserify",
+    "util": "util/",
+    "os": "os-browserify/browser",
+    "vm": "vm-browserify",
+    "stream": "stream-browserify",
+  },
+  "files": [
+    "src",
+    "dist"
+  ]
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "npx webpack",

@@ -1,11 +1,11 @@
 const path = require('path');
 
 module.exports = {
-    mode: 'development', // 或者 'production'
+    mode: 'production', // 或者 'production'
     entry: './src/index.mjs',
     output: {
         path: path.resolve(__dirname, 'dist'),
-        filename: 'bundle.js',
+        filename: 'stealthim.js',
         library: 'StealthIMJSSDK',
         libraryTarget: 'umd',
         globalObject: 'this'
