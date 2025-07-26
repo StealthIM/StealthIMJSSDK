@@ -250,7 +250,7 @@ declare module './index.mjs' {
          * @param callback - 消息回调函数，接收包含消息数据和群组ID的对象。
          * @returns API响应。
          */
-        pullMessage(groupid: number, callback: (data: { data: MessageData[]; groupid: number }) => boolean | void): Promise<APIResponse & { err?: any }>;
+        pullMessage(groupid: number, callback: (data: { data: MessageData[]; groupid: number }) => boolean | void): Promise<APIResponse>;
         /**
          * 消息类型常量。
          */
@@ -266,6 +266,31 @@ declare module './index.mjs' {
         };
     };
 
+    export const file: {
+        /**
+         * 获取文件信息。
+         * @param fileHash - 文件的哈希值。
+         * @returns 包含文件大小的API响应。
+         */
+        getFileInfo(fileHash: string): Promise<APIResponse<{ size: bigint }>>;
+        /**
+         * 上传文件。
+         * @param file - 要上传的文件对象（浏览器中的File对象或Node.js中的文件路径）。
+         * @param groupid - 群组ID。
+         * @param callback - 上传进度回调函数。
+         * @returns API响应。
+         */
+        uploadFile(file: File | string, groupid: number, callback: (progress: { stage: string; finished: number; total: number; stage_num: number; stage_total: number; progress: number }) => void): Promise<APIResponse<{ hash: string }>>;
+        /**
+         * 下载文件。
+         * @param fileHash - 文件的哈希值。
+         * @param callback - 下载进度回调函数。
+         * @param fileObj - 在浏览器中为FileSystemFileHandle，在Node.js中为文件路径字符串。
+         * @returns API响应。
+         */
+        downloadFile(fileHash: string, callback: (progress: { stage: string; finished: number; total: number; stage_num: number; stage_total: number; progress: number }) => void, fileObj?: FileSystemFileHandle | string): Promise<APIResponse>;
+    };
+
     /**
      * 启动后台同步。
      */
@@ -279,6 +304,7 @@ declare module './index.mjs' {
         user: typeof user;
         group: typeof group;
         message: typeof message;
+        file: typeof file;
         startBackgroundSync: typeof startBackgroundSync;
     };
 
