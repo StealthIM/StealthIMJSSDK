@@ -17,12 +17,12 @@
     "util": "util/",
     "os": "os-browserify/browser",
     "vm": "vm-browserify",
-    "stream": "stream-browserify",
+    "stream": "stream-browserify"
   },
   "files": [
     "src",
     "dist"
-  ]
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "npx webpack",
