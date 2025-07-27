@@ -1,4 +1,4 @@
-declare module './index.mjs' {
+declare module 'stealthimjssdk' {
     /**
      * 通用的API响应接口。
      * @template T - 响应数据的数据类型，默认为null。

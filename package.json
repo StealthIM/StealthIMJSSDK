@@ -1,13 +1,15 @@
 {
   "name": "stealthimjssdk",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "StealthIM javascript SDK",
   "license": "MIT",
-  "author": "",
+  "author": "cxykevin<2630904720@qq.com>",
   "type": "module",
   "main": "src/index.mjs",
   "module": "src/index.mjs",
   "unpkg": "dist/stealthim.js",
+  "types": "src/index.d.ts",
+  "typings": "src/index.d.ts",
   "browser": {
     "https": false,
     "http": false,
