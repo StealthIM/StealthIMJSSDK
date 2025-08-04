@@ -1,5 +1,5 @@
-import zh from "./translate/zh-cn.js";
-import en from "./translate/en-us.js";
+import * as zh from "./translate/zh-cn.js";
+import * as en from "./translate/en-us.js";
 
 const translates = {
     "zh-cn": zh,
