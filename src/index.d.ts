@@ -137,6 +137,11 @@ declare module 'stealthimjssdk' {
          * @throws 如果未登录则抛出错误。
          */
         getUserSession(): string;
+        /**
+         * 注销当前用户会话。
+         * @returns 始终成功。
+         * */
+        logout(): Promise<APIResponse>;
     };
 
     export const group: {

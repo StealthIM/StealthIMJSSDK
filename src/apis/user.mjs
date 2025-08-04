@@ -38,6 +38,14 @@ export async function loginWithSession(session = "") {
                 "data": null
             }
         }
+        if (ret[0]['value'] == "") {
+            return {
+                "success": false,
+                "error": false,
+                "msg": i18n.t.Errorcode[1502],
+                "data": null
+            }
+        }
         session = ret[0]['value']
     }
     for (var retry = 0; retry < 3; retry++) {
@@ -464,4 +472,15 @@ export function getUserSession() {
         throw new Error("Please login before calling this function");
     }
     return userSession
+}
+
+export async function logout() {
+    await runQuery("INSERT OR REPLACE INTO `config` (`key`, `value`) VALUES('session',?);", [""])
+    userSession = ""
+    return {
+        "success": true,
+        "error": false,
+        "msg": "",
+        "data": null
+    }
 }

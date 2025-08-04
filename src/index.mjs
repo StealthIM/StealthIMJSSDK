@@ -2,7 +2,7 @@ import { initializeDatabase } from './database/db.mjs'
 import { createTable } from './database/create.mjs'
 import { loadi18n } from './i18n/load.mjs'
 
-import { loginWithSession, login, getUserInfo, register, deleteUser, changeUserData, getUserNickname, setBaseURL as setBaseURLUser, init as initUsr } from './apis/user.mjs'
+import { loginWithSession, login, getUserInfo, register, deleteUser, changeUserData, getUserNickname, logout, setBaseURL as setBaseURLUser, init as initUsr } from './apis/user.mjs'
 
 import { setGroupCallback, refreshGroups, getGroupInfo, getGroupPublicInfo, createGroup, joinGroup, inviteToGroup, setUserLevel, kickUser, changeGroupData, setBaseURL as setBaseURLGrp, init as initGrp } from './apis/group.mjs'
 
@@ -52,7 +52,8 @@ export const user = {
     register: register,
     deleteUser: deleteUser,
     changeUserData: changeUserData,
-    getUserNickname: getUserNickname
+    getUserNickname: getUserNickname,
+    logout: logout,
 }
 
 export const group = {
