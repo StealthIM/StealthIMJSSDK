@@ -301,7 +301,11 @@ export async function changeUserData(data) {
         for (var retry = 0; retry < 3; retry++) {
             try {
                 var obj = {}
-                obj[keyname] = val
+                if (keyname == "phone") {
+                    obj["phone_number"] = val
+                } else {
+                    obj[keyname] = val
+                }
                 var resp = await axios.patch(BaseURL + "/user/" + keyname, obj, {
                     "headers": {
                         "Authorization": `Bearer ${userSession}`
@@ -364,7 +368,7 @@ export async function changeUserData(data) {
         }
     }
     if (typeof phonenum == "string" && phonenum.length > 0) {
-        ret = await callAPI("phone_number", phonenum)
+        ret = await callAPI("phone", phonenum)
         if (ret.success == false) {
             return ret
         }
