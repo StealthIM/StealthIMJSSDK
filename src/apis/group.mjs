@@ -34,8 +34,8 @@ export async function updateGroupNullName() {
             groupsToUpdate = await runQuery("SELECT groupid FROM `groups` ORDER BY RANDOM() LIMIT 1");
         }
 
-        if (groupsToUpdate.length > 0) {
-            const groupid = groupsToUpdate[0].groupid;
+        for (var i = 0; i < groupsToUpdate.length; i++) {
+            const groupid = groupsToUpdate[i].groupid;
             const publicInfo = await getGroupPublicInfo(groupid);
 
             if (publicInfo.success && publicInfo.data?.name) {
@@ -44,6 +44,7 @@ export async function updateGroupNullName() {
             } else {
                 console.warn(`[StealthIM] Failed to get public info for group ${groupid} or name is missing. Ignoring error.`);
             }
+            groupCallback()
         }
     } catch (e) {
         console.error("[StealthIM] Error in updateGroupNullName:", e);

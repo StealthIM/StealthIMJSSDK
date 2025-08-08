@@ -210,6 +210,11 @@ declare module 'stealthimjssdk' {
          */
         changeGroupData(groupid: number, data: { name?: string; password?: string }): Promise<APIResponse>;
         /**
+         * 获取群列表。
+         * @returns 包含群组ID列表的API响应。
+         */
+        getGroups(): Promise<{ groupid: number; name: string | "" }[]>;
+        /**
          * 用户在群组中的等级常量。
          */
         UserLevel: {
