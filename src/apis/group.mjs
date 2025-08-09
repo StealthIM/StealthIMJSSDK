@@ -24,6 +24,8 @@ export function setGroupCallback(callback) {
     groupCallback = callback
 }
 
+var groupLst = new Map()
+
 export async function updateGroupNullName() {
     await acquireGroupUpdateLock(); // 等待并获取锁
     try {
@@ -41,6 +43,9 @@ export async function updateGroupNullName() {
             if (publicInfo.success && publicInfo.data?.name) {
                 const newName = publicInfo.data.name;
                 await runQuery("UPDATE `groups` SET name = ? WHERE groupid = ?", [newName, groupid]);
+                groupLst.set(groupid, {
+                    "name": newName
+                })
             } else {
                 console.warn(`[StealthIM] Failed to get public info for group ${groupid} or name is missing. Ignoring error.`);
             }
@@ -54,11 +59,14 @@ export async function updateGroupNullName() {
     }
 }
 
-var groupLst = []
 
 export async function loadGroupsCache() {
     var ret = await runQuery("SELECT * FROM `groups`")
-    groupLst = ret
+    for (var i = 0; i < ret.length; i++) {
+        groupLst.set(ret[i].groupid, {
+            "name": ret[i].name
+        })
+    }
 }
 
 
@@ -72,7 +80,7 @@ export async function init() {
     }, 60000)
     setInterval(async () => {
         await updateGroupNullName()
-    }, 35000)
+    }, 10000)
 }
 
 export async function refreshGroups() {
@@ -124,7 +132,7 @@ export async function refreshGroups() {
         }
         // 在这里实现差分改动入数据库
         const newGroupIds = new Set(resp.data.groups); // 服务器返回的群组ID列表
-        const oldGroupsMap = new Map(groupLst.map(group => [group.groupid, group])); // 本地缓存的群组Map
+        const oldGroupsMap = groupLst
 
         // 处理新增
         for (const groupid of newGroupIds) {
@@ -370,6 +378,7 @@ export async function createGroup(name) {
             "data": null
         }
     }
+    refreshGroups()
     return {
         "success": true,
         "error": false,
@@ -449,6 +458,7 @@ export async function joinGroup(groupid, password = "") {
             "data": null
         }
     }
+    refreshGroups()
     return {
         "success": true,
         "error": false,

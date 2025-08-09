@@ -4,7 +4,7 @@ import { loadi18n } from './i18n/load.mjs'
 
 import { loginWithSession, login, getUserInfo, register, deleteUser, changeUserData, getUserNickname, logout, setBaseURL as setBaseURLUser, init as initUsr } from './apis/user.mjs'
 
-import { setGroupCallback, refreshGroups, getGroupInfo, getGroupPublicInfo, createGroup, joinGroup, inviteToGroup, setUserLevel, kickUser, changeGroupData, setBaseURL as setBaseURLGrp, init as initGrp } from './apis/group.mjs'
+import { setGroupCallback, refreshGroups, getGroupInfo, getGroupPublicInfo, createGroup, joinGroup, inviteToGroup, setUserLevel, kickUser, changeGroupData, getGroups, setBaseURL as setBaseURLGrp, init as initGrp } from './apis/group.mjs'
 
 import { setMsgCallback, searchMessage, sendMessage, recallMessage, pullMessage, setBaseURL as setBaseURLMsg } from './apis/msg.mjs'
 
@@ -66,7 +66,8 @@ export const group = {
     setUserLevel: setUserLevel,
     kickUser: kickUser,
     changeGroupData: changeGroupData,
-    setGroupCallback: setGroupCallback
+    setGroupCallback: setGroupCallback,
+    getGroups: getGroups
 }
 
 export const message = {
@@ -83,9 +84,9 @@ export const file = {
     downloadFile: downloadFile
 }
 
-function startBackgroundSync() {
-    initGrp()
-    initUsr()
+async function startBackgroundSync() {
+    await initGrp()
+    await initUsr()
 }
 
 const stim = {
