@@ -132,13 +132,16 @@ export async function refreshGroups() {
         }
         // 在这里实现差分改动入数据库
         const newGroupIds = new Set(resp.data.groups); // 服务器返回的群组ID列表
-        const oldGroupsMap = groupLst
+        const oldGroupsMap = new Map(groupLst)
 
         // 处理新增
         for (const groupid of newGroupIds) {
             if (!oldGroupsMap.has(groupid)) {
                 // 新增群组，name 设置为空字符串
                 await runQuery("INSERT INTO `groups` (groupid, name) VALUES (?, ?)", [groupid, ""]);
+                groupLst.set(groupid, {
+                    "name": ""
+                })
             }
             // 对于已存在的群组，不进行name的覆盖更新，因为resp.data.groups不包含name
         }
@@ -148,6 +151,7 @@ export async function refreshGroups() {
             if (!newGroupIds.has(groupid)) {
                 // 删除群组
                 await runQuery("DELETE FROM `groups` WHERE groupid = ?", [groupid]);
+                groupLst.delete(groupid)
             }
         }
 
