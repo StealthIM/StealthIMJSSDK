@@ -77,7 +77,7 @@ declare module 'stealthimjssdk' {
      * @param DBNameOnWeb - 在Web环境中数据库的名称，默认为"stim-%"。
      * @param Language - 语言设置，默认为"zh-cn"。
      */
-    export function init(baseurl?: string, DBPathOnNode?: string, DBNameOnWeb?: string, Language?: string): Promise<void>;
+    export function init(baseurl?: string, DBPathOnNode?: string, DBNameOnWeb?: string, Language?: string, wasmUseLocal: string = ""): Promise<void>;
 
     export const user: {
         /**

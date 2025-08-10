@@ -8,7 +8,7 @@ import os from 'os';
 let db;
 let currentDbName; // 用于存储当前数据库名称
 
-async function initializeDatabase(DBPathOnNode, DBNameOnWeb, BaseURL) {
+async function initializeDatabase(DBPathOnNode, DBNameOnWeb, BaseURL, wasmUseLocal = "https://sql.js.org/dist") {
     if (typeof window === 'undefined') {
         // Node.js 环境
         const sqlite3 = await import('sqlite3').then(module => module.default);
@@ -44,8 +44,11 @@ async function initializeDatabase(DBPathOnNode, DBNameOnWeb, BaseURL) {
         let dbInstance; // 存储数据库实例
 
         try {
+
             SQLModule = await initSqlJs({
-                locateFile: file => `https://sql.js.org/dist/${file}`
+                locateFile: file => {
+                    return wasmUseLocal + "/" + file;
+                }
             });
 
             const DB_VERSION = 1;
