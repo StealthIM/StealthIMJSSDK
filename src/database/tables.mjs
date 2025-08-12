@@ -11,6 +11,7 @@ export const msgTableSQL = `CREATE TABLE IF NOT EXISTS msg (
     msg_uid INTEGER,
     msg_fileHash TEXT,
     msg_type INTEGER,
+    msg_sender TEXT,
     sended INTEGER DEFAULT 0
 );`
 
