@@ -321,6 +321,11 @@ export async function searchMessage(groupid, msgID, limit = 1000, offset = 0, ot
     if (other_sql != "") {
         other_sql = " AND " + other_sql
     }
-    var ret = await runQuery("SELECT * FROM msg WHERE group_id = ? AND msg_id >= ? " + other_sql + " ORDER BY msg_id DESC LIMIT ? OFFSET ?", [groupid, msgID, limit, offset])
+    var ret = []
+    if (msgID != 0) {
+        ret = await runQuery("SELECT * FROM msg WHERE group_id = ? AND msg_id < ? " + other_sql + " ORDER BY msg_id DESC LIMIT ? OFFSET ?", [groupid, msgID, limit, offset])
+    } else {
+        ret = await runQuery("SELECT * FROM msg WHERE group_id = ? " + other_sql + " ORDER BY msg_id DESC LIMIT ? OFFSET ?", [groupid, limit, offset])
+    }
     return ret
 }
