@@ -218,7 +218,7 @@ export async function recallMessage(groupid, msgID) {
     }
 }
 
-export async function pullMessage(groupid) {
+export async function pullMessage(groupid, onSuccess = (close) => { }) {
     if (typeof groupid != "number") {
         return {
             "success": false,
@@ -246,7 +246,15 @@ export async function pullMessage(groupid) {
             "Authorization": `Bearer ${getUserSession()}`
         }
     })
-    var rets = await new Promise((resolve, reject) => {
+    var rets = await new Promise((resolve) => {
+        onSuccess((data) => {
+            resolve({
+                "success": true,
+                "error": false,
+                "msg": "",
+                "data": data
+            })
+        })
         sse.on("message", (data) => {
             data = JSON.parse(data.data)
             if (data.result.code != 800) {
@@ -293,7 +301,7 @@ export async function pullMessage(groupid) {
     sse.close()
     return rets
 }
-export async function searchMessage(groupid, msgID, limit = 1000, offset = 0, other_sql = "") {
+export async function searchMessage(groupid, msgID, limit = 1000, offset = 0, other_sql = "", compare = "<") {
     if (typeof groupid != "number") {
         return []
     }
@@ -323,7 +331,7 @@ export async function searchMessage(groupid, msgID, limit = 1000, offset = 0, ot
     }
     var ret = []
     if (msgID != 0) {
-        ret = await runQuery("SELECT * FROM msg WHERE group_id = ? AND msg_id < ? " + other_sql + " ORDER BY msg_id DESC LIMIT ? OFFSET ?", [groupid, msgID, limit, offset])
+        ret = await runQuery("SELECT * FROM msg WHERE group_id = ? AND msg_id " + compare + " ? " + other_sql + " ORDER BY msg_id DESC LIMIT ? OFFSET ?", [groupid, msgID, limit, offset])
     } else {
         ret = await runQuery("SELECT * FROM msg WHERE group_id = ? " + other_sql + " ORDER BY msg_id DESC LIMIT ? OFFSET ?", [groupid, limit, offset])
     }

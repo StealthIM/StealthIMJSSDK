@@ -231,14 +231,16 @@ declare module 'stealthimjssdk' {
          */
         setMsgCallback(callback: (data: { groupid: number, type: number, data: any }) => void): void;
         /**
-         * 搜索消息。
+         * 搜索消息。按 DESC 顺序返回。
          * @param groupid - 群组ID。
-         * @param keyword - 搜索关键词。
+         * @param msgID - 最老消息的ID。0 表示返回所有消息。
          * @param page - 页码。
          * @param limit - 每页限制数量。
+         * @param other_sql - 其他SQL查询语句。
+         * @param compare - 查询msgID时比较符号，默认为"<"。
          * @returns 包含消息数据的API响应。
          */
-        searchMessage(groupid: number, keyword: string, page: number, limit: number): Promise<APIResponse<MessageData[]>>;
+        searchMessage(groupid: number, msgID: number, limit: number = 1000, offset: number = 0, other_sql: string = "", compare: string = "<"): Promise<APIResponse<MessageData[]>>;
         /**
          * 发送消息到指定群组。
          * @param groupid - 群组ID。
@@ -257,10 +259,10 @@ declare module 'stealthimjssdk' {
         /**
          * 拉取指定群组的消息。
          * @param groupid - 群组ID。
-         * @param callback - 消息回调函数，接收包含消息数据和群组ID的对象。
+         * @param onSuccess - 消息回调函数，接收包含消息数据和群组ID的对象。
          * @returns API响应。
          */
-        pullMessage(groupid: number, callback: (data: { data: MessageData[]; groupid: number }) => boolean | void): Promise<APIResponse>;
+        pullMessage(groupid: number, onSuccess: ((close) => void)): Promise<APIResponse>;
         /**
          * 消息类型常量。
          */
