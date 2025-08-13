@@ -277,7 +277,7 @@ export async function pullMessage(groupid, onSuccess = (close) => { }) {
             for (var i = 0; i < data.msg.length; i++) {
                 var nowdata = data.msg[i];
                 ((function (nowdata) {
-                    runQuery("INSERT OR REPLACE INTO msg (group_id, msg_content, msg_msgTime, msg_id, msg_fileHash, msg_type, msg_sender) VALUES (?, ?, ?, ?, ?, ?, ?)", [nowdata.groupid, nowdata.msg, (nowdata.time), (nowdata.msgid), nowdata.hash, nowdata.type, nowdata.sender])
+                    runQuery("INSERT OR REPLACE INTO msg (group_id, msg_content, msg_msgTime, msg_id, msg_fileHash, msg_type, msg_sender) VALUES (?, ?, ?, ?, ?, ?, ?)", [nowdata.groupid, nowdata.msg, (nowdata.time), (nowdata.msgid), nowdata.hash, nowdata.type, nowdata.username])
                 })(nowdata));
             }
             if (data.msg.length == 0) {
