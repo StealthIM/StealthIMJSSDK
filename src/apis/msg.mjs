@@ -311,7 +311,7 @@ export async function searchMessage(groupid, msgID, limit = 1000, offset = 0, ot
     if (typeof msgID != "number") {
         return []
     }
-    if (msgID <= 0) {
+    if (msgID < 0) {
         return []
     }
     if (typeof limit != "number") {
