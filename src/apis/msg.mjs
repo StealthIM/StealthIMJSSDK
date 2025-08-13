@@ -323,7 +323,7 @@ export async function searchMessage(groupid, msgID, limit = 1000, offset = 0, ot
     if (typeof offset != "number") {
         return []
     }
-    if (offset <= 0) {
+    if (offset < 0) {
         return []
     }
     if (other_sql != "") {
