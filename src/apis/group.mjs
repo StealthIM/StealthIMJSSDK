@@ -624,7 +624,7 @@ export async function setUserLevel(groupid, username, level) {
     for (var retry = 0; retry < 3; retry++) {
         try {
             var resp = await axios.put(BaseURL + "/group/" + String(groupid) + "/" + username, {
-                "username": username
+                "type": level
             }, {
                 "headers": {
                     "Authorization": `Bearer ${getUserSession()}`
