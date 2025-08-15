@@ -694,14 +694,6 @@ export async function kickUser(groupid, username) {
             "data": null
         }
     }
-    if (typeof level != "number") {
-        return {
-            "success": false,
-            "error": true,
-            "msg": i18n.t.Errorcode[100],
-            "data": null
-        }
-    }
     if (username == "") {
         return {
             "success": false,
