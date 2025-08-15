@@ -852,7 +852,7 @@ export async function changeGroupData(groupid, data) {
             return ret
         }
     }
-    if (typeof password == "string" && password.length > 0) {
+    if (typeof password == "string" && password.length >= 0) {
         ret = await callAPI("password", password)
         if (ret.success == false) {
             return ret
