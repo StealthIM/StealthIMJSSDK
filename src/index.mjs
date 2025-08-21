@@ -10,6 +10,7 @@ import { setMsgCallback, searchMessage, sendMessage, recallMessage, pullMessage,
 
 import { getFileInfo, uploadFile, downloadFile, setBaseURL as setBaseURLFile } from './apis/file.mjs'
 
+// 初始化函数，设置基础URL、数据库路径和语言
 export async function init(baseurl = "127.0.0.1:8089", DBPathOnNode = ".stim/stim-%.db", DBNameOnWeb = "stim-%", Language = "zh-cn") {
     setBaseURLUser(baseurl)
     setBaseURLGrp(baseurl)
@@ -45,6 +46,7 @@ export async function init(baseurl = "127.0.0.1:8089", DBPathOnNode = ".stim/sti
 }
 
 
+// 用户相关操作
 export const user = {
     loginWithSession: loginWithSession,
     login: login,
@@ -56,6 +58,7 @@ export const user = {
     logout: logout,
 }
 
+// 群组相关操作
 export const group = {
     refershGroups: refreshGroups,
     getGroupInfo: getGroupInfo,
@@ -70,6 +73,7 @@ export const group = {
     getGroups: getGroups
 }
 
+// 消息相关操作
 export const message = {
     sendMessage: sendMessage,
     recallMessage: recallMessage,
@@ -78,17 +82,20 @@ export const message = {
     searchMessage: searchMessage
 }
 
+// 文件相关操作
 export const file = {
     getFileInfo: getFileInfo,
     uploadFile: uploadFile,
     downloadFile: downloadFile
 }
 
+// 启动后台同步
 async function startBackgroundSync() {
     await initGrp()
     await initUsr()
 }
 
+// StealthIM SDK 主对象
 const stim = {
     init: init,
     user: user,
@@ -98,4 +105,5 @@ const stim = {
     startBackgroundSync: startBackgroundSync
 }
 
+// 默认导出 StealthIM SDK
 export default stim
