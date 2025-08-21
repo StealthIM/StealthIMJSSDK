@@ -141,7 +141,8 @@ export async function uploadFile(file, groupid, callback) {
     const metadata = {
         "size": filesize.toString(),
         "groupid": groupid.toString(),
-        "hash": calcHash
+        "hash": calcHash,
+        "filename": reader.getFileName() // 添加文件名到元数据
     }
 
     callback({
