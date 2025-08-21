@@ -720,7 +720,7 @@ export async function kickUser(groupid, username) {
     }
     for (var retry = 0; retry < 3; retry++) {
         try {
-            var resp = await axios.delete(BaseURL + "/group/" + String(groupid), {
+            var resp = await axios.delete(BaseURL + "/group/" + String(groupid) + "/" + username, {
                 "headers": {
                     "Authorization": `Bearer ${getUserSession()}`
                 }
