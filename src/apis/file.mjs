@@ -416,6 +416,7 @@ export async function downloadFile(fileHash, callback, fileObj = null) {
 
     var DownloadNum = blockSize * blocksWhenDownloadOnce // 单次下载的总字节数
     var writeToFile = async () => { } // 写入文件函数
+    var closeFunc = async () => { } // 写入文件函数
 
     if (typeof window === "undefined") {
         const fs = await import("fs") // 导入 fs 模块
@@ -463,6 +464,8 @@ export async function downloadFile(fileHash, callback, fileObj = null) {
                 })
             })
         } // 定义写入文件函数
+        closeFunc = async () => {
+        }
     } else {
         var writeable // 可写流
         try {
@@ -483,8 +486,12 @@ export async function downloadFile(fileHash, callback, fileObj = null) {
         writeToFile = async (data) => {
             // 避免每次写入都关闭和重新打开 writableStream
             await writeable.write(data);
+            // await writeable.flush()
             // writableStream 将在 downloadFile 函数结束时关闭一次
         }; // 定义写入文件函数
+        closeFunc = async () => {
+            await writeable.close()
+        }
     }
 
     callback({
@@ -657,6 +664,8 @@ export async function downloadFile(fileHash, callback, fileObj = null) {
         //     }, 400)
         // }) // 短暂等待
     }
+
+    await closeFunc()
 
     callback({
         "stage": "download",
