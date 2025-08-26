@@ -2,3 +2,4 @@ node_modules/**
 dist
 .stim
 test.*
+index.html

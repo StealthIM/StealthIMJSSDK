@@ -358,9 +358,10 @@ const UINT32_MAX = 0xFFFFFFFF >>> 0; // 定义 UINT32_MAX 常量
  * @param {string} fileHash - 文件的哈希值。
  * @param {Function} callback - 下载进度回调函数。
  * @param {FileSystemFileHandle|string|null} [fileObj=null] - 浏览器环境下为 FileSystemFileHandle，Node.js 环境下为文件路径字符串。
+ * @param {number} [maxConcurrentDownloadsParam=8] - 最大并发下载数，默认为 8。
  * @returns {Promise<Object>} - 包含 success, error, msg, data 的结果对象。
  */
-export async function downloadFile(fileHash, callback, fileObj = null) {
+export async function downloadFile(fileHash, callback, fileObj = null, maxConcurrentDownloadsParam = 8) {
     if (typeof fileHash !== "string" || fileHash.length !== 64) {
         return {
             "success": false,
@@ -370,8 +371,6 @@ export async function downloadFile(fileHash, callback, fileObj = null) {
         };
     }
 
-    // 浏览器环境下，fileObj 应该是 FileSystemFileHandle 或 null (如果用户想选择文件)
-    // Node.js 环境下，fileObj 应该是字符串 (文件路径)
     if (typeof window !== "undefined" && fileObj !== null && !(fileObj instanceof FileSystemFileHandle)) {
         return {
             "success": false,
@@ -388,13 +387,9 @@ export async function downloadFile(fileHash, callback, fileObj = null) {
             "data": null
         };
     }
-    var blocksWhenDownloadOnce // 单次下载的块数
-    if (typeof window === "undefined") {
-        blocksWhenDownloadOnce = 24n // nodejs 下一切正常
-    } else {
-        blocksWhenDownloadOnce = 1n // 在浏览器上发现了严重的性能问题
-    }
-    const blockSize = 2048n * 1024n // 块大小
+
+    const blockSize = 2048n * 1024n; // 块大小
+    const maxConcurrentDownloads = typeof maxConcurrentDownloadsParam === 'number' && maxConcurrentDownloadsParam > 0 ? maxConcurrentDownloadsParam : 8; // 定义并发下载数，默认为 8
 
     callback({
         "stage": "getFileInfo", // 阶段：获取文件信息
@@ -403,95 +398,89 @@ export async function downloadFile(fileHash, callback, fileObj = null) {
         "stage_num": 0,
         "stage_total": 2,
         "progress": 0
-    })
+    });
 
-    var fileInfo = await getFileInfo(fileHash) // 获取文件信息
+    var fileInfo = await getFileInfo(fileHash); // 获取文件信息
     if (!fileInfo.success) {
-        return fileInfo
+        return fileInfo;
     }
 
-    var size = 0n // 已下载大小
-    var finished = 0n // 已完成的块数
-    var sum = fileInfo.data.size // 文件总大小
+    var sum = fileInfo.data.size; // 文件总大小
+    var downloadedBytes = 0n; // 已下载的字节数
 
-    var DownloadNum = blockSize * blocksWhenDownloadOnce // 单次下载的总字节数
-    var writeToFile = async () => { } // 写入文件函数
-    var closeFunc = async () => { } // 写入文件函数
+    var fileHandle; // Node.js 文件句柄
+    var writeable; // 浏览器可写流
+    let activeWriteOperations = 0; // 跟踪活跃的写入操作数量
+    var writeToFile = async (data, position) => { }; // 写入文件函数
+    var closeFunc = async () => { }; // 关闭文件函数
+
+    const textDecoder = new TextDecoder(); // 定义 TextDecoder
+    const abortController = new AbortController(); // 用于取消 fetch 请求
 
     if (typeof window === "undefined") {
-        const fs = await import("fs") // 导入 fs 模块
-        var stat = await new Promise((resolve, reject) => {
-            fs.stat(fileObj, (err, stats) => {
-                resolve(stats)
-            }) // 获取文件状态
-        })
+        // Node.js 环境
+        const fs = await import("fs/promises"); // 导入 fs/promises 模块
         try {
-            size = BigInt(stat.size) // 获取文件大小
-            if (size >= sum || size % DownloadNum != 0) {
-                await new Promise((resolve, reject) => {
-                    writeToFile = async (data) => {
-                        await new Promise((resolve, reject) => {
-                            fs.appendFile(fileObj, data, () => {
-                                resolve()
-                            })
-                        })
-                    }
-                    fs.writeFile(fileObj, "", () => {
-                        resolve()
-                    }) // 清空文件内容
-                })
-            } else {
-                finished = size / blockSize // 计算已完成的块数
+            fileHandle = await fs.open(fileObj, 'r+'); // 尝试以读写模式打开文件
+            const stats = await fileHandle.stat(); // 获取文件状态
+            downloadedBytes = BigInt(stats.size); // 获取文件大小
+            if (downloadedBytes >= sum || downloadedBytes % blockSize !== 0n) {
+                // 文件不完整或大小不匹配，重新开始下载
+                await fileHandle.truncate(0); // 清空文件内容
+                downloadedBytes = 0n;
             }
         } catch (e) {
-            await new Promise((resolve, reject) => {
-                writeToFile = async (data) => {
-                    await new Promise((resolve, reject) => {
-                        fs.appendFile(fileObj, data, () => {
-                            resolve()
-                        })
-                    })
-                }
-                fs.writeFile(fileObj, "", () => {
-                    resolve()
-                }) // 清空文件内容
-            })
+            // 文件不存在或无法打开，创建新文件
+            fileHandle = await fs.open(fileObj, 'w+'); // 以写模式打开文件，如果不存在则创建
+            downloadedBytes = 0n;
         }
-        writeToFile = async (data) => {
-            await new Promise((resolve, reject) => {
-                fs.appendFile(fileObj, data, () => {
-                    resolve()
-                })
-            })
-        } // 定义写入文件函数
+
+        writeToFile = async (data, position) => {
+            activeWriteOperations++;
+            try {
+                await fileHandle.write(new Uint8Array(data), 0, data.byteLength, Number(position)); // 写入文件数据到指定位置
+            } finally {
+                activeWriteOperations--;
+            }
+        };
         closeFunc = async () => {
-        }
+            // 等待所有活跃的写入操作完成
+            while (activeWriteOperations > 0) {
+                await new Promise(resolve => setTimeout(resolve, 50)); // 短暂等待
+            }
+            await fileHandle.close(); // 关闭文件句柄
+        };
     } else {
-        var writeable // 可写流
+        // 浏览器环境
         try {
-            const file = await fileObj.getFile() // 获取文件对象
-            size = BigInt(file.size) // 获取文件大小
-            if (size >= sum || size % DownloadNum != 0) {
+            const file = await fileObj.getFile(); // 获取文件对象
+            downloadedBytes = BigInt(file.size); // 获取文件大小
+            if (downloadedBytes >= sum || downloadedBytes % blockSize !== 0n) {
                 writeable = await fileObj.createWritable(); // 创建可写流
+                downloadedBytes = 0n;
             } else {
-                finished = size / blockSize // 计算已完成的块数
-                writeable = await fileObj.createWritable({
-                    keepExistingData: true
-                }); // 创建可写流并保留现有数据
-                await writeable.seek(Number(size)) // 移动写入指针
+                writeable = await fileObj.createWritable({ keepExistingData: true }); // 创建可写流并保留现有数据
+                await writeable.seek(Number(downloadedBytes)); // 移动写入指针
             }
         } catch (e) {
             writeable = await fileObj.createWritable(); // 创建可写流
         }
-        writeToFile = async (data) => {
-            // 避免每次写入都关闭和重新打开 writableStream
-            await writeable.write(data);
-            // await writeable.flush()
-            // writableStream 将在 downloadFile 函数结束时关闭一次
-        }; // 定义写入文件函数
+
+        writeToFile = async (data, position) => {
+            activeWriteOperations++;
+            try {
+                await writeable.write({ type: 'write', data: data, position: Number(position) }); // 写入文件数据到指定位置
+            } finally {
+                activeWriteOperations--;
+            }
+        };
         closeFunc = async () => {
-            await writeable.close()
-        }
+            // 等待所有活跃的写入操作完成
+            while (activeWriteOperations > 0) {
+                await new Promise(resolve => setTimeout(resolve, 50)); // 短暂等待
+            }
+            await writeable.close(); // 关闭可写流
+        };
     }
 
     callback({
@@ -501,60 +490,95 @@ export async function downloadFile(fileHash, callback, fileObj = null) {
         "stage_num": 0,
         "stage_total": 2,
         "progress": 1
-    }) // 更新获取文件信息进度为完成
+    }); // 更新获取文件信息进度为完成
 
+    // 维护一个全局的已下载字节数，用于进度回调
+    let totalDownloadedBytes = downloadedBytes;
+    // 维护一个Map，用于跟踪每个正在下载的块的当前进度（已下载但未写入的字节）
+    let activeBlockProgress = new Map(); // Map<blockStart: BigInt, downloadedBytesForThisBlock>
 
+    // 所有待下载的块的起始字节偏移量
+    const allBlockStarts = [];
+    for (let i = downloadedBytes; i < sum; i += blockSize) {
+        allBlockStarts.push(i);
+    }
 
-    for (var lblknum = finished / blocksWhenDownloadOnce; lblknum < (sum + DownloadNum - 1n) / DownloadNum; lblknum++) { // 遍历每个下载批次
-        var start = lblknum * DownloadNum // 当前批次的起始字节
-        var end = min((lblknum + 1n) * DownloadNum - 1n, sum - 1n) // 当前批次的结束字节
+    let downloadError = null; // 用于记录下载过程中是否发生错误
+    let blocksToDownload = [...allBlockStarts]; // 复制一份，因为我们会从中移除
 
-        callback({
-            "stage": "download", // 阶段：下载
-            "finished": Number(start),
-            "total": Number(sum),
-            "stage_num": 1,
-            "stage_total": 2,
-            "progress": Number(start) / Number(sum)
-        }) // 更新下载进度
-
-        var startBlockID = start / blockSize // 起始块 ID
-        var blocks = [] // 存储下载的块
-        for (var i = 0n; i < ((end - start + blockSize) / blockSize); i++) {
-            blocks.push(new ArrayBuffer(Number(blockSize))) // 初始化块数组
+    const startDownloadTask = async (blockStart) => {
+        if (downloadError || abortController.signal.aborted) { // 增加中止检查
+            return; // 如果已经发生错误或已中止，则停止安排新的下载任务
         }
-        var finished = 0n // 当前批次已完成的块数
-        for (var retry = 0; retry < 3; retry++) { // 重试机制
+
+        const blockEnd = min(blockStart + blockSize - 1n, sum - 1n);
+
+        // 初始化当前块的下载进度
+        activeBlockProgress.set(blockStart, 0n);
+
+        for (let retry = 0; retry < 3; retry++) {
             try {
                 const headers = {
                     "Authorization": `Bearer ${getUserSession()}`,
-                    "Range": `bytes=${start}-${end}`
+                    "Range": `bytes=${blockStart}-${blockEnd}`
                 };
                 const response = await fetch(BaseURL + "/file/" + fileHash, {
                     method: "GET",
                     headers: headers,
-                }); // 发送文件下载请求
-                var flagSuccess = 0 // 成功标志
-                var blockid, lenx; // 块 ID 和长度
-                var datacache = new Uint8Array(); // 当前累积的数据
-                var readMode = 0; // 状态机: 0 = 读取头部, 1 = 读取数据
-                var currentOffset = 0; // datacache 中当前处理的偏移量
+                    signal: abortController.signal, // 传递 AbortSignal
+                });
 
-                for await (const value of response.body) {
-                    if (flagSuccess) {
-                        break;
+                const reader = response.body.getReader();
+                let value, done;
+                let datacache = new Uint8Array(8192);
+                let currentOffset = 0;
+                let dataLength = 0;
+                let readMode = 0;
+                let blockid, lenx;
+
+                while (true) {
+                    if (abortController.signal.aborted) { // 检查是否已取消
+                        throw new Error("Download aborted.");
+                    }
+                    ({ value, done } = await reader.read());
+                    if (done) break;
+
+                    if (datacache.length - dataLength < value.length || currentOffset > datacache.length / 2) {
+                        const newSize = Math.max(datacache.length * 2, dataLength - currentOffset + value.length + 8192);
+                        const newDatacache = new Uint8Array(newSize);
+                        newDatacache.set(datacache.subarray(currentOffset, dataLength), 0);
+                        datacache = newDatacache;
+                        dataLength = dataLength - currentOffset;
+                        currentOffset = 0;
                     }
 
-                    // 将新数据追加到 datacache
-                    const newDatacache = new Uint8Array(datacache.length - currentOffset + value.length);
-                    newDatacache.set(datacache.subarray(currentOffset), 0);
-                    newDatacache.set(value, datacache.length - currentOffset);
-                    datacache = newDatacache;
-                    currentOffset = 0; // 重置偏移量，因为我们有一个新的缓冲区
+                    datacache.set(value, dataLength);
+                    dataLength += value.length;
+
+                    // 更新当前块的下载进度
+                    activeBlockProgress.set(blockStart, activeBlockProgress.get(blockStart) + BigInt(value.length));
+
+                    // 计算当前总进度（已写入 + 正在下载）
+                    let currentTotalProgress = totalDownloadedBytes;
+                    for (let progress of activeBlockProgress.values()) {
+                        currentTotalProgress += progress;
+                    }
+
+                    callback({
+                        "stage": "download",
+                        "finished": Number(currentTotalProgress),
+                        "total": Number(sum),
+                        "stage_num": 1,
+                        "stage_total": 2,
+                        "progress": Number(currentTotalProgress) / Number(sum)
+                    });
 
                     while (true) {
+                        if (abortController.signal.aborted) { // 检查是否已取消
+                            throw new Error("Download aborted.");
+                        }
                         if (readMode === 0) { // 读取头部
-                            if (datacache.length - currentOffset < 8) {
+                            if (dataLength - currentOffset < 8) {
                                 break; // 数据不足以读取头部
                             }
                             const dataViewBID = new DataView(datacache.buffer, datacache.byteOffset + currentOffset, 4);
@@ -563,109 +587,121 @@ export async function downloadFile(fileHash, callback, fileObj = null) {
                             const dataViewLen = new DataView(datacache.buffer, datacache.byteOffset + currentOffset + 4, 4);
                             lenx = dataViewLen.getUint32(0, true); // 获取数据长度
 
-                            currentOffset += 8; // 偏移量前进到数据部分
+                            currentOffset += 8;
                             readMode = 1;
                         }
 
                         if (readMode === 1) { // 读取数据
-                            if (datacache.length - currentOffset < lenx) {
+                            if (dataLength - currentOffset < lenx) {
                                 break; // 数据不足以读取完整消息
                             }
                             const dataViewMain = new DataView(datacache.buffer, datacache.byteOffset + currentOffset, lenx);
 
                             if (blockid === UINT32_MAX) {
-                                // 解析 JSON
+                                // 特殊消息，表示此 Range 请求处理完成或错误
                                 try {
                                     var json = JSON.parse(textDecoder.decode(new Uint8Array(dataViewMain.buffer, dataViewMain.byteOffset, dataViewMain.byteLength)));
                                 } catch (e) {
-                                    const buffer = Buffer.from(dataViewMain.buffer, dataViewMain.byteOffset, dataViewMain.byteLength);
-                                    const jsonString = buffer.toString('utf-8');
-                                    var json = JSON.parse(jsonString);
-                                } // 解析 JSON 数据
-                                if (json?.result?.code !== 800 && json?.result?.code !== 0) {
-                                    throw new Error(json?.result?.msg); // 抛出错误
-                                } else {
-                                    flagSuccess = 1; // 设置成功标志
-                                    break; // 退出内部 while 循环和外部 for await 循环
+                                    var json = JSON.parse(textDecoder.decode(new Uint8Array(dataViewMain.buffer, dataViewMain.byteOffset, dataViewMain.byteLength)));
                                 }
+                                if (json?.result?.code !== 800 && json?.result?.code !== 0) {
+                                    throw new Error(json?.result?.msg);
+                                }
+                                // 成功处理此 Range 请求
+                                // 在成功处理一个 Range 请求后，移除此块的进度跟踪
+                                activeBlockProgress.delete(blockStart);
+                                return; // 退出当前 promise
                             } else {
-                                // 复制块数据
+                                // 这是一个文件块，写入到正确的位置
                                 var newBuffer = new ArrayBuffer(dataViewMain.byteLength);
                                 const sourceView = new Uint8Array(dataViewMain.buffer, dataViewMain.byteOffset, dataViewMain.byteLength);
                                 var targetView = new Uint8Array(newBuffer);
                                 targetView.set(sourceView);
-                                blocks[blockid - Number(startBlockID)] = newBuffer; // 存储块数据
+
+                                await writeToFile(newBuffer, BigInt(blockid) * blockSize); // 写入文件
+                                // 写入完成后，从 activeBlockProgress 中移除此块，并更新 totalDownloadedBytes
+                                activeBlockProgress.delete(blockStart);
+                                totalDownloadedBytes += BigInt(newBuffer.byteLength); // 累加实际写入的字节数
+
+                                // 再次计算当前总进度并回调
+                                let currentTotalProgress = totalDownloadedBytes;
+                                for (let progress of activeBlockProgress.values()) {
+                                    currentTotalProgress += progress;
+                                }
+                                callback({
+                                    "stage": "download",
+                                    "finished": Number(currentTotalProgress),
+                                    "total": Number(sum),
+                                    "stage_num": 1,
+                                    "stage_total": 2,
+                                    "progress": Number(currentTotalProgress) / Number(sum)
+                                });
                             }
 
-                            currentOffset += lenx; // 偏移量前进到下一个头部
+                            currentOffset += lenx;
                             readMode = 0;
-
-                            finished++; // 已完成块数加一
-
-                            callback({
-                                "stage": "download",
-                                "finished": Number(min(start + finished * blockSize, sum)),
-                                "total": Number(sum),
-                                "stage_num": 1,
-                                "stage_total": 2,
-                                "progress": Number(min(start + finished * blockSize, sum)) / Number(sum)
-                            }); // 更新下载进度
                         }
                     }
                 }
-                if (flagSuccess) {
-                    try {
-                        if (response.body && typeof response.body.cancel === 'function') {
-                            response.body.cancel(); // 取消流
-                        }
-                    } catch (e) {
-                        console.error("Error closing response body:", e); // 关闭响应体错误
-                    }
-                    break;
-                }
+                // 如果流结束但没有收到 UINT32_MAX 成功消息，可能是不完整或错误
+                throw new Error("Download stream ended unexpectedly.");
+
             } catch (e) {
-                console.error("Download block error:", e); // 下载块错误
+                // 如果是 AbortError，不进行重试
+                if (e.name === 'AbortError' || e.message === "Download aborted.") {
+                    downloadError = e; // 记录错误
+                    // 在错误发生时，确保从 activeBlockProgress 中移除此块
+                    activeBlockProgress.delete(blockStart);
+                    throw e; // 立即抛出，停止当前任务
+                }
+                console.error(`[StealthIM]download ${blockStart}-${blockEnd} retry: ${retry + 1}/3 error:`, e);
                 if (retry === 2) {
-                    // await closeStreams(); // 在最后一次重试失败时关闭流
-                    return {
-                        "success": false,
-                        "error": true,
-                        "msg": i18n.t.Errorcode[101],
-                        "data": null,
-                        "error": e
-                    };
+                    downloadError = e; // 记录错误
+                    abortController.abort(); // 立即中止所有其他正在进行的 fetch 请求
+                    // 在错误发生时，确保从 activeBlockProgress 中移除此块
+                    activeBlockProgress.delete(blockStart);
+                    throw e;
+                }
+                await new Promise(resolve => setTimeout(resolve, 1000 * (retry + 1)));
+            }
+        }
+    };
+
+    const downloadWorker = async () => {
+        while (blocksToDownload.length > 0 && !downloadError && !abortController.signal.aborted) { // 增加中止检查
+            const blockStart = blocksToDownload.shift(); // 取出一个块
+            if (blockStart !== undefined) { // 确保取到了块
+                try {
+                    await startDownloadTask(blockStart);
+                } catch (e) {
+                    // startDownloadTask already sets downloadError and calls abortController.abort() if needed
                 }
             }
         }
+    };
 
-        callback({
-            "stage": "download",
-            "finished": Number(end + 1n),
-            "total": Number(sum),
-            "stage_num": 1,
-            "stage_total": 2,
-            "progress": Number(end + 1n) / Number(sum)
-        }) // 更新下载进度为当前批次完成
-        // 拼接为大 arraybuffer
-        var lenSum = 0
-        for (var i = 0; i < blocks.length; i++) {
-            lenSum += blocks[i].byteLength
-        }
-        var newBuffer = new Uint8Array(lenSum);
-        var offset = 0
-        for (var i = 0; i < blocks.length; i++) {
-            var sourceView = new Uint8Array(blocks[i]);
-            newBuffer.set(sourceView, i * Number(blockSize)); // 拼接块数据
-        }
-        await writeToFile(newBuffer) // 写入文件
-        // await new Promise((resolve, reject) => {
-        //     setTimeout(() => {
-        //         resolve()
-        //     }, 400)
-        // }) // 短暂等待
+    // 启动初始的并发下载任务
+    const workers = [];
+    for (let i = 0; i < maxConcurrentDownloads; i++) {
+        workers.push(downloadWorker());
     }
 
-    await closeFunc()
+    // 等待所有 worker 完成
+    await Promise.allSettled(workers);
+
+    // 确保在关闭文件前，所有可能导致错误的异步操作都已停止
+    // 无论下载成功或失败，都关闭文件句柄
+    await closeFunc();
+
+    if (downloadError) {
+        return {
+            "success": false,
+            "error": true,
+            "msg": i18n.t.Errorcode[101],
+            "data": null,
+            "error": downloadError
+        };
+    }
 
     callback({
         "stage": "download",
@@ -674,13 +710,12 @@ export async function downloadFile(fileHash, callback, fileObj = null) {
         "stage_num": 1,
         "stage_total": 2,
         "progress": 1
-    }) // 更新下载进度为全部完成
+    });
 
     return {
         "success": true,
         "error": false,
         "msg": "",
         "data": null
-    }
-
+    };
 }
