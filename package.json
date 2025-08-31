@@ -28,7 +28,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "npx webpack",
-    "srv": "npx http-server --cors"
+    "srv": "npx http-server --cors",
+    "dev": "npx http-server --cors&npx webpack"
   },
   "dependencies": {
     "@noble/hashes": "^1.8.0",
