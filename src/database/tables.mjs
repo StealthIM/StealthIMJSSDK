@@ -12,7 +12,8 @@ export const msgTableSQL = `CREATE TABLE IF NOT EXISTS msg (
     msg_fileHash TEXT,
     msg_type INTEGER,
     msg_sender TEXT,
-    sended INTEGER DEFAULT 0
+    sended INTEGER DEFAULT 0,
+    need_load INTEGER DEFAULT 0
 );`
 
 export const grpTableSQL = `CREATE TABLE IF NOT EXISTS groups (

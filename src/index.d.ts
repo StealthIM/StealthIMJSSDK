@@ -227,42 +227,42 @@ declare module 'stealthimjssdk' {
     export const message: {
         /**
          * 设置消息回调函数。
-         * @param callback - 消息回调函数。
+         * @param callback - 消息回调函数，接收包含消息数组和群组ID的对象，返回false停止监听。
          */
-        setMsgCallback(callback: (data: { groupid: number, type: number, data: any }) => void): void;
+        setMsgCallback(callback: (data: { data: MessageData[], groupid: number }) => boolean | void): void;
         /**
-         * 搜索消息。按 DESC 顺序返回。
+         * 搜索消息。按 DESC 顺序返回，从数据库查询。
          * @param groupid - 群组ID。
-         * @param msgID - 最老消息的ID。0 表示返回所有消息。
-         * @param page - 页码。
-         * @param limit - 每页限制数量。
-         * @param other_sql - 其他SQL查询语句。
-         * @param compare - 查询msgID时比较符号，默认为"<"。
-         * @returns 包含消息数据的API响应。
+         * @param msgID - 起始消息ID，-1 或 0 表示返回最新消息。
+         * @param limit - 每页限制数量，默认128，最大128。
+         * @param offset - 偏移量，默认0。
+         * @param other_sql - 其他SQL查询语句，默认""。
+         * @returns 包含消息数据和是否需要请求更多标志的API响应。
          */
-        searchMessage(groupid: number, msgID: number, limit: number = 1000, offset: number = 0, other_sql: string = "", compare: string = "<"): Promise<APIResponse<MessageData[]>>;
+        searchMessage(groupid: number, msgID: number, limit?: number, offset?: number, other_sql?: string): Promise<APIResponse<{ msg: MessageData[], need_request: boolean }>>;
         /**
          * 发送消息到指定群组。
          * @param groupid - 群组ID。
          * @param content - 消息内容。
-         * @param contentType - 消息类型，默认为Text。
+         * @param contentType - 消息类型，默认为msgType.Text。
          * @returns API响应。
          */
         sendMessage(groupid: number, content: string, contentType?: number): Promise<APIResponse>;
         /**
-         * 撤回指定群组中的消息。
-         * @param groupid - 群组ID。
-         * @param msgID - 要撤回的消息ID。
-         * @returns API响应。
-         */
-        recallMessage(groupid: number, msgID: number): Promise<APIResponse>;
-        /**
          * 拉取指定群组的消息。
          * @param groupid - 群组ID。
-         * @param onSuccess - 消息回调函数，接收包含消息数据和群组ID的对象。
+         * @param onSuccess - 消息回调函数，接收关闭函数。
          * @returns API响应。
          */
-        pullMessage(groupid: number, onSuccess: ((close) => void)): Promise<APIResponse>;
+        pullMessage(groupid: number, onSuccess?: (close: () => void) => void): Promise<APIResponse>;
+        /**
+         * 查询历史消息，从指定msgID向上拉取。
+         * @param groupid - 群组ID。
+         * @param msgID - 起始消息ID。
+         * @param onSuccess - 消息回调函数，接收关闭函数。
+         * @returns API响应。
+         */
+        getHistory(groupid: number, msgID: number, onSuccess?: (close: () => void) => void): Promise<APIResponse>;
         /**
          * 消息类型常量。
          */

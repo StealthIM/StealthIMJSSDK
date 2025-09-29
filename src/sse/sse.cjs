@@ -9,18 +9,23 @@ class SSEClient {
      * @param {object} [options={}] - 配置选项。
      * @param {object} [options.headers={}] - 在 Node.js 环境中使用的请求头。
      * @param {number} [options.reconnectInterval=3000] - 自动重连的间隔时间（毫秒）。
+     * @param {object} [options.reconnectQueryOverrides={}] - 重连时覆盖的 query 参数，例如 { key: 'value' }。
      */
-    constructor(url, options = {}) {
+    constructor(url, options = {}, need_reconnect = true) {
         this.url = url;
         this.options = {
             headers: {},
             reconnectInterval: 3000,
+            reconnectQueryOverrides: {},
             ...options
         };
         this.eventSource = null;
         this.listeners = {};
         this.isConnecting = false;
         this.shouldReconnect = true; // 控制是否尝试重连
+        this.reconnectAttempts = []; // 存储最近重连时间戳，用于限制重连次数
+        this.lastEventId = null; // 添加 lastEventId 初始化
+        this.need_reconnect = need_reconnect;
     }
 
     /**
@@ -32,6 +37,7 @@ class SSEClient {
         }
         this.isConnecting = true;
         this.shouldReconnect = true; // 每次调用 connect() 都允许重连
+        this.reconnectAttempts = []; // 重置重连尝试计数
 
         if (typeof window !== 'undefined') {
             // 浏览器环境，使用 XHR
@@ -53,10 +59,10 @@ class SSEClient {
         this.eventSource.setRequestHeader('Accept', 'text/event-stream');
         this.eventSource.setRequestHeader('Cache-Control', 'no-cache');
 
-        // 如果有 Last-Event-ID，则添加
-        if (this.lastEventId) {
-            this.eventSource.setRequestHeader('Last-Event-ID', this.lastEventId);
-        }
+        // // 如果有 Last-Event-ID，则添加
+        // if (this.lastEventId) {
+        //     this.eventSource.setRequestHeader('Last-Event-ID', this.lastEventId);
+        // }
 
         // 添加自定义请求头
         for (const header in this.options.headers) {
@@ -74,19 +80,42 @@ class SSEClient {
             this.isConnecting = false;
             this._dispatchEvent('open', { target: this.eventSource }); // 模拟 EventSource 的 open 事件
             console.log('SSE stream loaded (XHR).');
-            this._reconnect(); // 连接正常结束也尝试重连
+            // 添加条件检查，仅当需要重连时才重连
+            if (this.need_reconnect) {
+                this._reconnect();
+            } else {
+                this._dispatchEvent('end', {
+                    // attempt: recentAttempts,
+                    url: this.url,
+                    interval: this.options.reconnectInterval
+                });
+            }
         };
 
         this.eventSource.onerror = (event) => {
             this.isConnecting = false;
             this._handleError(event);
-            this._reconnect();
+            // 添加条件检查，仅当需要重连时才重连
+            if (this.need_reconnect) {
+                this._reconnect();
+            } else {
+                this._dispatchEvent('close', {
+                    // attempt: recentAttempts,
+                    url: this.url,
+                    interval: this.options.reconnectInterval
+                });
+            }
         };
 
         this.eventSource.onabort = () => {
-            console.log('SSE connection aborted (XHR).');
             this.isConnecting = false;
-            // 不重连，因为是主动关闭
+            // 不重连，因为是主动关闭 else {
+            this._dispatchEvent('close', {
+                // attempt: recentAttempts,
+                url: this.url,
+                interval: this.options.reconnectInterval
+            });
+
         };
 
         this.eventSource.send();
@@ -105,7 +134,47 @@ class SSEClient {
      * 尝试重连。
      */
     _reconnect() {
+        if (!this.need_reconnect) {
+            return;
+        }
         if (this.shouldReconnect) {
+            // 应用 query overrides
+            // if (Object.keys(this.options.reconnectQueryOverrides).length > 0) {
+            //     try {
+            //         const urlObj = new URL(this.url);
+            //         Object.entries(this.options.reconnectQueryOverrides).forEach(([key, value]) => {
+            //             urlObj.searchParams.set(key, String(value));
+            //         });
+            //         this.url = urlObj.toString();
+            //     } catch (e) {
+            //         console.error('Invalid URL for reconnect overrides:', e);
+            //         this._handleError(e);
+            //         return;
+            //     }
+            // }
+
+            // 记录重连尝试时间戳
+            const now = Date.now();
+            this.reconnectAttempts.push(now);
+            // 清理超过1分钟的时间戳
+            this.reconnectAttempts = this.reconnectAttempts.filter(timestamp => now - timestamp <= 60000);
+            // 计算最近1分钟的重连次数
+            const recentAttempts = this.reconnectAttempts.length;
+            if (recentAttempts > 3) {
+                this.shouldReconnect = false;
+                const error = new Error('在1分钟内重连尝试超过3次，连接断开');
+                this._handleError(error);
+                this.close();
+                return;
+            }
+
+            // 触发 reconnect 事件
+            this._dispatchEvent('reconnect', {
+                attempt: recentAttempts,
+                url: this.url,
+                interval: this.options.reconnectInterval
+            });
+
             console.log(`Attempting to reconnect in ${this.options.reconnectInterval / 1000} seconds...`);
             setTimeout(() => {
                 this.connect();
@@ -160,6 +229,7 @@ class SSEClient {
      */
     close() {
         this.shouldReconnect = false; // 阻止重连
+        this.reconnectAttempts = []; // 清理重连尝试记录
         if (this.eventSource) {
             if (typeof window !== 'undefined') {
                 // 浏览器环境，使用 XHR 的 abort 方法
@@ -175,7 +245,7 @@ class SSEClient {
             this.eventSource = null;
         }
         this.isConnecting = false;
-        console.log('SSE connection closed by client.');
+        // console.log('SSE connection closed by client.');
     }
 
     /**
@@ -210,7 +280,16 @@ class SSEClient {
             if (res.statusCode !== 200) {
                 const error = new Error(`SSE connection failed with status: ${res.statusCode}`);
                 this._handleError(error);
-                this._reconnect();
+                // 添加条件检查，仅当需要重连时才重连
+                if (this.need_reconnect) {
+                    this._reconnect();
+                } else {
+                    this._dispatchEvent('close', {
+                        // attempt: recentAttempts,
+                        url: this.url,
+                        interval: this.options.reconnectInterval
+                    });
+                }
                 return;
             }
 
@@ -228,22 +307,44 @@ class SSEClient {
             });
 
             res.on('end', () => {
-                console.log('SSE stream ended.');
+                // console.log('SSE stream ended.');
                 this.isConnecting = false;
-                this._reconnect();
+                // 添加条件检查，仅当需要重连时才重连
+                if (this.need_reconnect) {
+                    this._reconnect();
+                } else {
+                    this._dispatchEvent('end', {
+                        // attempt: recentAttempts,
+                        url: this.url,
+                        interval: this.options.reconnectInterval
+                    });
+                }
+
             });
 
             res.on('close', () => {
-                console.log('SSE stream closed.');
+                // console.log('SSE stream closed.');
                 this.isConnecting = false;
-                this._reconnect();
+                // 添加条件检查，仅当需要重连时才重连
+                if (this.need_reconnect) {
+                    this._reconnect();
+                } else {
+                    this._dispatchEvent('close', {
+                        // attempt: recentAttempts,
+                        url: this.url,
+                        interval: this.options.reconnectInterval
+                    });
+                }
             });
         });
 
         this.eventSource.on('error', (error) => {
             this.isConnecting = false;
             this._handleError(error);
-            this._reconnect();
+            // 添加条件检查，仅当需要重连时才重连
+            if (this.need_reconnect) {
+                this._reconnect();
+            }
         });
 
         this.eventSource.end(); // 发送请求
@@ -271,6 +372,9 @@ class SSEClient {
                         lastEventId: event.id,
                         type: event.event
                     });
+                    if (event.id) {
+                        this.lastEventId = event.id; // 更新 lastEventId
+                    }
                 }
                 // 重置事件对象
                 event = {

@@ -6,7 +6,7 @@ import { loginWithSession, login, getUserInfo, register, deleteUser, changeUserD
 
 import { setGroupCallback, refreshGroups, getGroupInfo, getGroupPublicInfo, createGroup, joinGroup, inviteToGroup, setUserLevel, kickUser, changeGroupData, getGroups, setBaseURL as setBaseURLGrp, init as initGrp } from './apis/group.mjs'
 
-import { setMsgCallback, searchMessage, sendMessage, recallMessage, pullMessage, setBaseURL as setBaseURLMsg } from './apis/msg.mjs'
+import { msgType, setMsgCallback, searchMessage, sendMessage, pullMessage, getHistory, setBaseURL as setBaseURLMsg } from './apis/msg.mjs'
 
 import { getFileInfo, uploadFile, downloadFile, setBaseURL as setBaseURLFile } from './apis/file.mjs'
 
@@ -76,10 +76,12 @@ export const group = {
 // 消息相关操作
 export const message = {
     sendMessage: sendMessage,
-    recallMessage: recallMessage,
+    // recallMessage: recallMessage,
     pullMessage: pullMessage,
     setMsgCallback: setMsgCallback,
-    searchMessage: searchMessage
+    searchMessage: searchMessage,
+    getHistory: getHistory,
+    msgType: msgType
 }
 
 // 文件相关操作

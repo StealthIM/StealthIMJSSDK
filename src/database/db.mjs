@@ -4,9 +4,10 @@
 import path from 'path';
 import os from 'os';
 
-
 let db; // 数据库实例
 let currentDbName; // 用于存储当前数据库名称
+
+const DB_VERSION = 2; // 统一数据库版本，用于 Node.js 和浏览器环境
 
 /**
  * 初始化数据库连接。
@@ -18,6 +19,7 @@ let currentDbName; // 用于存储当前数据库名称
 async function initializeDatabase(DBPathOnNode, DBNameOnWeb, BaseURL, wasmUseLocal = "https://sql.js.org/dist") {
     if (typeof window === 'undefined') {
         // Node.js 环境
+        const fs = await import('fs/promises'); // 只在 Node.js 环境下动态导入 fs/promises
         const sqlite3 = await import('sqlite3').then(module => module.default); // 导入 sqlite3 模块
         let resolvedDbPath = DBPathOnNode;
         if (DBPathOnNode.startsWith('~')) {
@@ -31,11 +33,95 @@ async function initializeDatabase(DBPathOnNode, DBNameOnWeb, BaseURL, wasmUseLoc
 
         resolvedDbPath = path.resolve(resolvedDbPath); // 解析为绝对路径
 
-        db = new sqlite3.Database(resolvedDbPath, (err) => {
+        // 检查数据库文件是否存在
+        const dbExists = await fs.access(resolvedDbPath).then(() => true).catch(() => false);
+
+        db = new sqlite3.Database(resolvedDbPath, async (err) => {
             if (err) {
                 console.error('[StealthIM]Error connecting to SQLite database:', err.message); // 连接错误
+                return;
+            }
+            console.log(`[StealthIM]Connected to SQLite database (Node.js) at: ${resolvedDbPath}`); // 连接成功
+
+            // 数据库升级逻辑
+            if (dbExists) {
+                try {
+                    // 创建或检查版本表
+                    await new Promise((resolve, reject) => {
+                        db.run("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER)", (err) => {
+                            if (err) reject(err);
+                            else resolve();
+                        });
+                    });
+
+                    // 查询当前版本
+                    const versionResult = await new Promise((resolve, reject) => {
+                        db.get("SELECT version FROM schema_version LIMIT 1", (err, row) => {
+                            if (err) reject(err);
+                            else resolve(row ? row.version : 0);
+                        });
+                    });
+
+                    const currentVersion = versionResult || 0;
+
+                    if (currentVersion < DB_VERSION) {
+                        console.log(`[StealthIM]Database version ${currentVersion} is outdated. Deleting and recreating database.`);
+
+                        // 关闭当前 db
+                        db.close((closeErr) => {
+                            if (closeErr) {
+                                console.error('[StealthIM]Error closing database before upgrade:', closeErr);
+                                return;
+                            }
+
+                            // 删除数据库文件
+                            fs.unlink(resolvedDbPath).then(() => {
+                                console.log('[StealthIM]Old database file deleted.');
+
+                                // 重新创建数据库
+                                db = new sqlite3.Database(resolvedDbPath, (newErr) => {
+                                    if (newErr) {
+                                        console.error('[StealthIM]Error recreating database:', newErr);
+                                        return;
+                                    }
+                                    console.log(`[StealthIM]New database created at: ${resolvedDbPath}`);
+
+                                    // 初始化新版本
+                                    new Promise((resolve, reject) => {
+                                        db.run("INSERT INTO schema_version (version) VALUES (?)", [DB_VERSION], (err) => {
+                                            if (err) reject(err);
+                                            else resolve();
+                                        });
+                                    }).then(() => {
+                                        console.log(`[StealthIM]Database upgraded to version ${DB_VERSION}.`);
+                                    }).catch(err => {
+                                        console.error('[StealthIM]Error setting new version:', err);
+                                    });
+                                });
+                            }).catch(unlinkErr => {
+                                console.error('[StealthIM]Error deleting old database file:', unlinkErr);
+                            });
+                        });
+                    } else {
+                        console.log(`[StealthIM]Database is up to date (version ${currentVersion}).`);
+                    }
+                } catch (upgradeErr) {
+                    console.error('[StealthIM]Error during database upgrade check:', upgradeErr);
+                }
             } else {
-                console.log(`[StealthIM]Connected to SQLite database (Node.js) at: ${resolvedDbPath}`); // 连接成功
+                // 新数据库，创建版本表
+                await new Promise((resolve, reject) => {
+                    db.run("CREATE TABLE schema_version (version INTEGER)", (err) => {
+                        if (err) reject(err);
+                        else {
+                            db.run("INSERT INTO schema_version (version) VALUES (?)", [DB_VERSION], (insertErr) => {
+                                if (insertErr) reject(insertErr);
+                                else resolve();
+                            });
+                        }
+                    });
+                });
+                console.log(`[StealthIM]New database initialized with version ${DB_VERSION}.`);
             }
         });
     } else {
@@ -58,28 +144,34 @@ async function initializeDatabase(DBPathOnNode, DBNameOnWeb, BaseURL, wasmUseLoc
                 }
             });
 
-            const DB_VERSION = 1; // IndexedDB 数据库版本
-            const request = indexedDB.open(dbname, DB_VERSION); // 打开 IndexedDB 数据库
+            const request = indexedDB.open(dbname, DB_VERSION); // 使用全局 DB_VERSION
 
+            // 升级时删除旧存储
             request.onupgradeneeded = (event) => {
-                const db = event.target.result;
-                db.createObjectStore('keyval'); // 创建对象存储
+                const idbDb = event.target.result;
+                if (event.oldVersion < DB_VERSION) {
+                    console.log(`[StealthIM]Upgrading database from version ${event.oldVersion} to ${DB_VERSION}. Deleting old data.`);
+                    if (idbDb.objectStoreNames.contains('keyval')) {
+                        idbDb.deleteObjectStore('keyval'); // 删除旧的对象存储
+                    }
+                }
+                idbDb.createObjectStore('keyval'); // 创建新的对象存储
             };
 
             dbInstance = await new Promise((resolve, reject) => {
                 request.onsuccess = (event) => {
-                    const db = event.target.result;
-                    const transaction = db.transaction(['keyval'], 'readonly'); // 创建只读事务
+                    const idbDb = event.target.result;
+                    const transaction = idbDb.transaction(['keyval'], 'readonly'); // 创建只读事务
                     const store = transaction.objectStore('keyval'); // 获取对象存储
                     const getRequest = store.get('database'); // 获取数据库数据
 
                     getRequest.onsuccess = () => {
                         let loadedDb;
-                        if (getRequest.result) {
+                        if (getRequest.result) { // 修复：只检查结果是否存在，移除无效的 event.oldVersion 检查
                             console.log('[StealthIM]Loading database from IndexedDB.'); // 从 IndexedDB 加载数据库
                             loadedDb = new SQLModule.Database(getRequest.result);
                         } else {
-                            console.log('[StealthIM]Creating new database.'); // 创建新数据库
+                            console.log('[StealthIM]Creating new database due to upgrade or first time.'); // 创建新数据库
                             loadedDb = new SQLModule.Database();
                         }
                         resolve(loadedDb);
@@ -126,7 +218,7 @@ function startAutoSave(dbname) {
         if (!db) return; // 如果数据库未初始化，则返回
         try {
             const data = db.export(); // 导出数据库数据
-            const request = indexedDB.open(dbname, 1); // 打开 IndexedDB 数据库
+            const request = indexedDB.open(dbname, DB_VERSION); // 打开 IndexedDB 数据库
 
             request.onsuccess = (event) => {
                 const dbInstance = event.target.result;
@@ -237,7 +329,7 @@ async function closeDatabase() {
             try {
                 // 在关闭前强制保存一次
                 const data = db.export(); // 导出数据库数据
-                const request = indexedDB.open(currentDbName, 1); // 打开 IndexedDB 数据库
+                const request = indexedDB.open(currentDbName, DB_VERSION); // 打开 IndexedDB 数据库
 
                 request.onsuccess = (event) => {
                     const dbInstance = event.target.result;
