@@ -248,9 +248,10 @@ export async function sendMessage(groupid, content, contentType = msgType.Text) 
  * 拉取消息。
  * @param {number} groupid - 群组 ID。
  * @param {Function} [onSuccess=(close)=>{}] - 成功回调函数，参数为关闭函数。
+ * @param {boolean} [sync_only=false] - 是否只同步消息。
  * @returns {Promise<Object>} - 包含 success, error, msg, data 的结果对象。
  */
-export async function pullMessage(groupid, onSuccess = (close) => { }) {
+export async function pullMessage(groupid, onSuccess = (close) => { }, sync_only = false) {
     if (typeof groupid != "number") {
         return {
             "success": false,
@@ -273,7 +274,7 @@ export async function pullMessage(groupid, onSuccess = (close) => { }) {
     // } else {
     //     retx = BigInt(retx)
     // }
-    const sse = new SSEClient(BaseURL + "/message/" + String(groupid) + "?msgid=0&limit=64&sync=true", {
+    const sse = new SSEClient(BaseURL + "/message/" + String(groupid) + "?msgid=-1&limit=64&sync=true", {
         "headers": {
             "Authorization": `Bearer ${getUserSession()}`
         }
@@ -332,26 +333,17 @@ export async function pullMessage(groupid, onSuccess = (close) => { }) {
             if (data.msg.length == 0) {
                 return
             } else {
-                await runQuery("UPDATE msg SET need_load = 0 WHERE msg_id = ?", [lastmsg])
-                lastmsg = Number.MAX_SAFE_INTEGER
+                // await runQuery("UPDATE msg SET need_load = 0 WHERE msg_id = ?", [lastmsg])
+                // lastmsg = Number.MAX_SAFE_INTEGER
             }
             for (var i = 0; i < data.msg.length; i++) {
                 var nowdata = data.msg[i];
-                var needloadnow = 1
-                if (Number(nowdata.msgid) > lastmsg) {
-                    needloadnow = 0
-                }
+                var needloadnow = 0
                 // await runQuery("INSERT OR REPLACE INTO msg (group_id, msg_content, msg_msgTime, msg_id, msg_fileHash, msg_type, msg_sender, need_load) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [nowdata.groupid, nowdata.msg, (nowdata.time), (Number(nowdata.msgid)), nowdata.hash, nowdata.type, nowdata.username, needloadnow]) // 插入或替换消息到数据库
                 msgscache[Number(nowdata.msgid)] = [nowdata.groupid, nowdata.msg, (nowdata.time), (Number(nowdata.msgid)), nowdata.hash, nowdata.type, nowdata.username, needloadnow]
-                if (nowdata.msgid <= lastmsg) {
-                    if (lastmsg != Number.MAX_SAFE_INTEGER) {
-                        msgscache[lastmsg][7] = 0;
-                        // await runQuery("UPDATE msg SET need_load = 0 WHERE msg_id = ?", [lastmsg]) // 插入或替换消息到数据库
-                    }
-                }
                 lastmsg = Number(nowdata.msgid)
             }
-            var fullsqlstr = "INSERT OR IGNORE INTO msg (group_id, msg_content, msg_msgTime, msg_id, msg_fileHash, msg_type, msg_sender, need_load) VALUES "
+            var fullsqlstr = "INSERT INTO msg (group_id, msg_content, msg_msgTime, msg_id, msg_fileHash, msg_type, msg_sender, need_load) VALUES "
             var sqlfirstmsg = true
             var fullargs = []
             for (var i in msgscache) {
@@ -363,6 +355,7 @@ export async function pullMessage(groupid, onSuccess = (close) => { }) {
                 fullsqlstr = fullsqlstr + "(?, ?, ?, ?, ?, ?, ?, ?)"
                 fullargs = fullargs.concat(msgscache[i])
             }
+            fullsqlstr = fullsqlstr + `ON CONFLICT(msg_id) DO UPDATE SET need_load = CASE WHEN excluded.need_load = 0 AND need_load = 1 THEN 0 ELSE need_load END`
             await runQuery(fullsqlstr, fullargs) // 插入或替换消息到数据库
             /*
                 msg_id INTEGER PRIMARY KEY,
@@ -400,6 +393,10 @@ export async function pullMessage(groupid, onSuccess = (close) => { }) {
         }
 
         sse.connect() // 连接 SSE
+
+        if (!sync_only) {
+            getHistory(groupid, 0, true) // 获取历史消息
+        }
     })
     closeflag = true
     sse.close() // 关闭 SSE 连接
@@ -613,7 +610,7 @@ export async function getHistory(groupid, msgID, useGlobalCallback = false) {
             if (data.msg.length == 0) {
                 return
             } else {
-                await runQuery("UPDATE msg SET need_load = 0 WHERE msg_id = ?", [msgID])
+                await runQuery("UPDATE msg SET need_load = 0 WHERE msg_id = ?", [lastmsg])
                 lastmsg = Number.MAX_SAFE_INTEGER
             }
             for (var i = 0; i < data.msg.length; i++) {
@@ -632,7 +629,7 @@ export async function getHistory(groupid, msgID, useGlobalCallback = false) {
                 }
                 lastmsg = Number(nowdata.msgid)
             }
-            var fullsqlstr = "INSERT OR IGNORE INTO msg (group_id, msg_content, msg_msgTime, msg_id, msg_fileHash, msg_type, msg_sender, need_load) VALUES "
+            var fullsqlstr = "INSERT INTO msg (group_id, msg_content, msg_msgTime, msg_id, msg_fileHash, msg_type, msg_sender, need_load) VALUES "
             var sqlfirstmsg = true
             var fullargs = []
             for (var i in msgscache) {
@@ -644,6 +641,7 @@ export async function getHistory(groupid, msgID, useGlobalCallback = false) {
                 fullsqlstr = fullsqlstr + "(?, ?, ?, ?, ?, ?, ?, ?)"
                 fullargs = fullargs.concat(msgscache[i])
             }
+            fullsqlstr = fullsqlstr + `ON CONFLICT(msg_id) DO UPDATE SET need_load = CASE WHEN excluded.need_load = 0 AND need_load = 1 THEN 0 ELSE need_load END`
             await runQuery(fullsqlstr, fullargs) // 插入或替换消息到数据库
             /*
                 msg_id INTEGER PRIMARY KEY,
@@ -691,69 +689,6 @@ export async function getHistory(groupid, msgID, useGlobalCallback = false) {
                 "msg_sender": x.username,
             })))
         }
-        // sse.on("message", (data) => {
-        //     data = JSON.parse(data.data)
-        //     if (data.result.code != 800) {
-        //         resolve({
-        //             "success": false,
-        //             "error": true,
-        //             "msg": i18n.t.Errorcode[data.result.code],
-        //             "data": null
-        //         })
-        //         return
-        //     }
-        //     for (var i = 0; i < data.msg.length; i++) {
-        //         var nowdata = data.msg[i];
-        //         ((function (nowdata) {
-        //             runQuery("INSERT OR REPLACE INTO msg (group_id, msg_content, msg_msgTime, msg_id, msg_fileHash, msg_type, msg_sender, need_load) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [nowdata.groupid, nowdata.msg, (nowdata.time), (nowdata.msgid), nowdata.hash, nowdata.type, nowdata.username, 1]) // 插入或替换消息到数据库，need_load=1
-        //         })(nowdata));
-        //     }
-        //     if (data.msg.length == 0) {
-        //         resolve({
-        //             "success": true,
-        //             "error": false,
-        //             "msg": "",
-        //             "data": null
-        //         })
-        //         return
-        //     }
-        //     var mapped = data.msg.map((x) => ({
-        //         "msg_id": x.msgid,
-        //         "group_id": x.groupid,
-        //         "msg_content": x.msg,
-        //         "msg_msgTime": x.time,
-        //         "msg_uid": x.uid,
-        //         "msg_fileHash": x.hash,
-        //         "msg_type": x.type,
-        //         "msg_sender": x.username,
-        //     }))
-        //     var ret = callback({
-        //         "data": mapped,
-        //         "groupid": groupid
-        //     }) // 调用回调函数
-        //     if (ret === false) {
-        //         resolve({
-        //             "success": true,
-        //             "error": false,
-        //             "msg": "",
-        //             "data": null
-        //         })
-        //     }
-        //     // 如果需要继续监听，可不 resolve；假设单响应，resolve
-        //     datas.push(mapped)
-        // })
-        // sse.on("close", () => {
-        //     if (datas.length == 0) {
-        //         // 将指定的消息标记为已加载
-        //         runQuery("UPDATE msg SET need_load = 0 WHERE group_id = ? AND msg_id <= ?", [groupid, msgID])
-        //     }
-        //     resolve({
-        //         "success": true,
-        //         "error": false,
-        //         "msg": "",
-        //         "data": datas
-        //     })
-        // })
         sse.connect() // 连接 SSE
     })
     closeflag = true

@@ -252,9 +252,10 @@ declare module 'stealthimjssdk' {
          * 拉取指定群组的消息。
          * @param groupid - 群组ID。
          * @param onSuccess - 消息回调函数，接收关闭函数。
+         * @param {boolean} [sync_only=false] - 是否只同步消息。
          * @returns API响应。
          */
-        pullMessage(groupid: number, onSuccess?: (close: () => void) => void): Promise<APIResponse>;
+        pullMessage(groupid: number, onSuccess?: (close: () => void) => void, sync_only = false): Promise<APIResponse>;
         /**
          * 查询历史消息，从指定msgID向上拉取。
          * @param groupid - 群组ID。
